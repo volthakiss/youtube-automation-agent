@@ -78,4 +78,4 @@ backup/
 
 # Cache
 .cache/
-*.cache
+*.cacheindex.js.save*

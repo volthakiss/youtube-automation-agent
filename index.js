@@ -13,6 +13,39 @@ const { AnalyticsOptimizationAgent } = require('./agents/analytics-optimization-
 const { DailyAutomation } = require('./schedules/daily-automation');
 const chalk = require('chalk');
 
+// === AJOUT OAUTH2 GOOGLEAPIS ===
+const { google } = require('googleapis');
+
+// Scopes YouTube nécessaires
+const SCOPES = [
+  'https://www.googleapis.com/auth/youtube',
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube.channel-memberships',
+  'https://www.googleapis.com/auth/youtubepartner',
+  'https://www.googleapis.com/auth/youtube.force-ssl',
+  'https://www.googleapis.com/auth/youtube.readonly',
+  'https://www.googleapis.com/auth/youtube.analytics.readonly',
+  'https://www.googleapis.com/auth/youtube.analytics.monetary.readonly'
+];
+
+// URI de redirection dynamique
+const REDIRECT_URI = process.env.REDIRECT_URI || 
+  (process.env.NODE_ENV === 'production' 
+    ? 'https://buzzbitfacts.onrender.com/oauth2callback' 
+    : 'http://localhost:3456/oauth2callback');
+
+// Création du client OAuth2
+const oauth2Client = new google.auth.OAuth2(
+  process.env.YOUTUBE_CLIENT_ID,
+  process.env.YOUTUBE_CLIENT_SECRET,
+  REDIRECT_URI
+);
+
+// Injecte oauth2Client dans les variables globales ou CredentialManager
+global.oauth2Client = oauth2Client;
+global.SCOPES = SCOPES;
+// === FIN AJOUT ===
+
 class YouTubeAutomationAgent {
   constructor() {
     this.logger = new Logger('MainAgent');
@@ -102,6 +135,27 @@ class YouTubeAutomationAgent {
         timestamp: new Date().toISOString()
       });
     });
+
+    // === AJOUT : Route OAuth2 Callback ===
+    this.app.get('/oauth2callback', async (req, res) => {
+      const { code } = req.query;
+      if (!code) {
+        return res.status(400).send('No code provided');
+      }
+
+      try {
+        const { tokens } = await oauth2Client.getToken(code);
+        await this.credentials.saveYouTubeTokens(tokens);
+        res.send(`
+          <h2>✅ Authentification réussie !</h2>
+          <p>Tu peux fermer cette page.</p>
+          <script>setTimeout(() => window.close(), 3000);</script>
+        `);
+      } catch (error) {
+        res.status(500).send(`Erreur: ${error.message}`);
+      }
+    });
+    // === FIN AJOUT ===
 
     // Manual content generation
     this.app.post('/generate', async (req, res) => {
@@ -201,6 +255,7 @@ class YouTubeAutomationAgent {
       console.log(chalk.white('🔧 API Health: ') + chalk.cyan(`http://localhost:${PORT}/health`));
       console.log(chalk.white('📅 Schedule: ') + chalk.cyan(`http://localhost:${PORT}/schedule`));
       console.log(chalk.white('📈 Analytics: ') + chalk.cyan(`http://localhost:${PORT}/analytics`));
+      console.log(chalk.white('🔑 OAuth Callback: ') + chalk.cyan(`${REDIRECT_URI}`));
       console.log(chalk.gray('─'.repeat(50)));
       console.log(chalk.yellow('\n🤖 Automation is active. Content will be generated and posted daily.'));
     });
